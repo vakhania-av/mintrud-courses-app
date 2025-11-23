@@ -9,7 +9,9 @@ export default function useCoursesStore() {
     dispatch({ type: ActionTypes.SetLoading });
 
     try {
-      const { courses } = await sendRequest("GET", `${API_URL}/courses.php`);
+      const response = await sendRequest("GET", `${API_URL}/courses.php`);
+      // Предполагаем, что API возвращает { courses: [...] } или просто массив
+      const courses = response.courses || response;
 
       dispatch({ type: ActionTypes.SetCourses, payload: courses });
     } catch (err) {
@@ -24,10 +26,9 @@ export default function useCoursesStore() {
   // Загрузка комбинаций
   const fetchCombinations = async () => {
     try {
-      const { combinations } = await sendRequest(
-        "GET",
-        `${API_URL}/combinations.php`
-      );
+      const response = await sendRequest("GET", `${API_URL}/combinations.php`);
+      // Предполагаем, что API возвращает { combinations: [...] } или просто массив
+      const combinations = response.combinations || response;
 
       dispatch({ type: ActionTypes.SetCombinations, payload: combinations });
     } catch (err) {
@@ -47,14 +48,17 @@ export default function useCoursesStore() {
     }
 
     try {
-      const { combination } = await sendRequest(
+      const response = await sendRequest(
         "POST",
         `${API_URL}/combinations.php`,
         {
           name: state.currentCombination.name,
-          courses: state.currentCombination.courses,
+          courses: state.currentCombination.courses
         }
       );
+
+      // Предполагаем, что API возвращает { combination: {...} }
+      const combination = response.combination || response;
 
       dispatch({ type: ActionTypes.SaveCombination, payload: combination });
       await fetchCombinations();
@@ -73,7 +77,6 @@ export default function useCoursesStore() {
       await sendRequest("DELETE", `${API_URL}/combinations.php?id=${id}`);
 
       dispatch({ type: ActionTypes.DeleteCombination, payload: id });
-      await fetchCombinations();
     } catch (err) {
       console.error("Ошибка при удалении комбинации:", err);
       dispatch({
@@ -81,6 +84,29 @@ export default function useCoursesStore() {
         payload: "Ошибка при удалении комбинации",
       });
     }
+  };
+
+  const addToCombination = (courseId) => {
+    if (state.currentCombination.courses.length >= 3) {
+      dispatch({
+        type: ActionTypes.SetError,
+        payload: "Можно добавить не более 3 курсов"
+      });
+      return;
+    }
+    dispatch({ type: ActionTypes.AddToCombination, payload: courseId });
+  };
+
+  const removeFromCombination = (courseId) => {
+    dispatch({ type: ActionTypes.RemoveFromCombination, payload: courseId });
+  };
+
+  const setCombinationName = (name) => {
+    dispatch({ type: ActionTypes.SetCombinationName, payload: name });
+  };
+
+  const toggleCourse = (courseId) => {
+    dispatch({ type: ActionTypes.ToggleCourse, payload: courseId });
   };
 
   // Очистка сообщения
@@ -94,7 +120,11 @@ export default function useCoursesStore() {
     fetchCombinations,
     saveCombination,
     deleteCombination,
+    addToCombination,
+    removeFromCombination,
+    setCombinationName,
+    toggleCourse,
     clearMessage,
-    dispatch,
+    dispatch
   };
 }

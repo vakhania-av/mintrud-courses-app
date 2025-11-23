@@ -1,52 +1,52 @@
 <?php
+require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/config.php';
 
 // GET - Получение всех комбинаций с курсами
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     try {
+        // Используем постгресовую функцию json_agg и COALESCE для пустых комбинаций.
+        // На всякий случай добавим JSON_UNESCAPED_UNICODE для лучшей обработки русского текста.
         $query = '
             SELECT
                 cc.id,
                 cc.combination_name,
                 cc.created_at,
-                json_agg(
-                    json_build_object(
-                        \'id\', c.id,
-                        \'code\', c.code,
-                        \'title\', c.title,
-                        \'position\', c.position
-                    )
-                        ORDER BY cc2.position
+                COALESCE(
+                    json_agg(
+                        json_build_object(
+                            \'id\', c.id,
+                            \'code\', c.code,
+                            \'title\', c.title,
+                            \'position\', cc2.position
+                        ) ORDER BY cc2.position
+                    ) FILTER (WHERE c.id IS NOT NULL),
+                    \'[]\'::json
                 ) AS courses
-            FROM course_combinations AS cc
-                LEFT JOIN combination_courses AS cc2 ON cc.id = cc2.combination_id
-                LEFT JOIN courses AS c ON cc2.course_id = c.id
+            FROM course_combinations cc
+            LEFT JOIN combination_courses cc2 ON cc.id = cc2.combination_id
+            LEFT JOIN courses c ON cc2.course_id = c.id
             GROUP BY cc.id, cc.combination_name, cc.created_at
             ORDER BY cc.created_at DESC
             LIMIT 100
         ';
 
-        $statement = $pdo->prepare($query);
+        $statement = $pdo->query($query);
         // Получаем комбинации
         $combinations = $statement->fetchAll();
 
         // Парсим JSON для каждой комбинации
         foreach($combinations as &$combination) {
-            $combination['courses'] = json_decode($combination['courses'], true);
-
-            // Если курсов нет, то пустой массив
-            if (!$combination['courses'] || $combination['courses'][0] === null) {
-                $combination['courses'] = [];
-            }
+            $combination['courses'] = json_decode($combination['courses'], true) ?: [];
         }
 
         // Возвращаем код успешного выполнения и результат
-        http_response_code(201);
+        http_response_code(200);
         echo json_encode([
             'status' => 'success',
             'combinations' => $combinations,
             'count' => count($combinations)
-        ]);
+        ], JSON_UNESCAPED_UNICODE);
     } catch (Exception $err) {
         http_response_code(500);
         echo json_encode([
@@ -67,11 +67,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new Exception('Отсутствуют необходимые поля: name, courses');
         }
 
-        if (count($data['courses'] > 3)) {
+        if (count($data['courses']) > 3) {
             throw new Exception('Недопустимо использовать более 3-х курсов на комбинацию!');
         }
 
-        if (count($data['courses'] === 0)) {
+        if (count($data['courses']) === 0) {
             throw new Exception('Для комбинации необходим как минимум один курс!');
         }
 
@@ -87,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $result = $statement->fetch();
 
-        if (count($result) != count($courseIds)) {
+        if ((int)$result['count'] != count($courseIds)) {
             throw new Exception('Внимание! Не найдены один или несколько курсов!');
         }
 
@@ -115,6 +115,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Коммитим транзакцию
             $pdo->commit();
 
+            // Добавляем курсы к ответу
+            $combination['courses'] = $data['courses'];
+
             // Возвращаем статус и успешный ответ
             http_response_code(201);
             echo json_encode([
@@ -141,16 +144,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
     try {
         // Распарсим строку URL
-        parse_str($_SERVER['QUERY_STRING'], $query_params);
+        $url_parts = parse_url($_SERVER['REQUEST_URI']);
+        $path = $url_parts['path'] ?? '';
 
-        $id = $query_params['id'] ?? null;
+        $path_parts = explode('/', $path);
+        $id = end($path_parts);
+
+        if (empty($id) || $id === 'combinations') {
+            parse_str($_SERVER['QUERY_STRING'] ?? '', $query_params);
+            $id = $query_params['id'] ?? null;
+        }
+        
 
         if (!$id || !is_numeric($id)) {
             throw new Exception('Комбинация ID неверна, либо отсутствует');
         }
 
         $statement = $pdo->prepare('DELETE FROM course_combinations WHERE id = :id');
-        $statement->execute(['id' => $id]);
+        $statement->execute([':id' => $id]);
 
         if ($statement->rowCount() === 0) {
             throw new Exception('Комбинация отсутствует');

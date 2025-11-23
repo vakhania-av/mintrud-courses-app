@@ -1,4 +1,4 @@
-import { createContext, useReducer } from "react";
+import { createContext, useReducer, useContext } from "react";
 import { ActionTypes } from "../const";
 
 export const CoursesContext = createContext();
@@ -150,7 +150,7 @@ export function CoursesProvider({ children }) {
 }
 
 export function useCoursesContext() {
-  const context = React.useContext(CoursesContext);
+  const context = useContext(CoursesContext);
 
   if (!context) {
     throw new Error(

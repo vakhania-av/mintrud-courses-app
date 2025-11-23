@@ -17,36 +17,73 @@ export const ActionTypes = {
   ClearMessage: "CLEAR_MESSAGE",
 };
 
+export const DEFAULT_TIMEOUT = 4000;
+
 // Функция-хэлпер для обработки запроса к API
-const handleResponse = async () => {
+const handleResponse = async (response) => {
+  // Проверяем, валиден ли Content-Type
+  const contentType = response.headers.get("content-type");
+
   if (!response.ok) {
     let errorData = {};
 
     try {
-      errorData = await response.json(); // Если сервер возвращает JSON с ошибкой
+      if (contentType && contentType.includes("application/json")) {
+        errorData = await response.json(); // Если сервер возвращает JSON с ошибкой
+      }
 
-      throw errorData;
+      throw new Error(
+        errorData.message || `HTTP ${response.status}: ${response.statusText}`
+      );
     } catch (err) {
-      throw new Error(errorData.error);
+      throw new Error(err.message || "Произошла неизвестная ошибка");
     }
   }
 
-  return response.json();
-};
-
-export default async function sendRequest(method, endpoint, body = null) {
-  const headers = new Headers();
-  const options = {
-    method,
-    credentials: "include",
-    headers,
-  };
-
-  if (body !== null) {
-    options.body = JSON.stringify(body);
+  // Если это успешный ответ
+  if (contentType && contentType.includes("application/json")) {
+    return response.json();
   }
 
-  let response = await fetch(endpoint, options);
+  return response.text();
+};
 
-  return handleResponse(response);
+export default async function sendRequest(
+  method,
+  endpoint,
+  body = null,
+  timeout = 30000
+) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const headers = new Headers();
+
+    headers.set("Content-Type", "application/json");
+    headers.set("Accept", "application/json");
+
+    const options = {
+      method,
+      credentials: "include",
+      signal: controller.signal,
+      headers,
+    };
+
+    if (body !== null) {
+      options.body = JSON.stringify(body);
+    }
+
+    const response = await fetch(endpoint, options);
+
+    clearTimeout(timeoutId);
+
+    return await handleResponse(response);
+  } catch (err) {
+    clearTimeout(timeoutId);
+
+    if (err.name === "AbortError") {
+      throw new Error(`Таймут запроса превышен после ${timeout} ms`);
+    }
+  }
 }
