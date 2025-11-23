@@ -25,6 +25,7 @@ docker-compose up -d
 4. Открой браузер
 
 http://localhost:5173 - React приложение
+
 http://localhost:8000/server/api/courses.php - API
 
 ## Структура проекта
