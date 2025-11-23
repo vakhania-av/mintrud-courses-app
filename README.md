@@ -30,10 +30,15 @@ http://localhost:8000/server/api/courses.php - API
 ## Структура проекта
 
 project/
+
 ├── client/ # ReactJS приложение (Vite с конфигурацией, package.json)
+
 ├── server/ # PHP API
+
 ├── nginx/ # Конфиг Nginx
+
 └── docker-compose.yml
+
 
 ## Функционал
 
